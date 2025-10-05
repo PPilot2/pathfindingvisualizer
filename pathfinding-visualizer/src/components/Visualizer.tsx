@@ -261,6 +261,7 @@ export default function Visualizer() {
   const [activeButton, setActiveButton] = useState<
     "wall" | "start" | "target" | "dijkstra" | "astar" | "bfs" | "dfs" | null
   >("wall");
+  const [elapsedTime, setElapsedTime] = useState<number | null>(null);
   const [isMouseDown, setIsMouseDown] = useState(false);
   const [running, setRunning] = useState(false);
   const [speed, setSpeed] = useState(15);
@@ -360,7 +361,7 @@ export default function Visualizer() {
       timeoutsRef.current.forEach(clearTimeout);
       timeoutsRef.current = [];
       setRunning(false);
-
+      setElapsedTime(null);
       setGrid((prev) => {
         const base = cloneGrid(prev).map((row) =>
           row.map((n) => ({
@@ -402,6 +403,7 @@ export default function Visualizer() {
           });
 
         const delay = 70 - speed;
+        const startTime = performance.now();
         animate(
           result.visitedOrder,
           result.path,
@@ -412,10 +414,11 @@ export default function Visualizer() {
         );
 
         setRunning(true);
-        setTimeout(
-          () => setRunning(false),
-          (result.visitedOrder.length + result.path.length) * delay + 50
-        );
+        setTimeout(() => {
+          setRunning(false);
+          const endTime = performance.now();
+          setElapsedTime(endTime - startTime);
+        }, (result.visitedOrder.length + result.path.length) * delay + 50);
 
         return base;
       });
@@ -560,6 +563,11 @@ export default function Visualizer() {
             onChange={(e) => setSpeed(Number(e.target.value))}
           />
         </label>
+        {elapsedTime !== null && (
+          <div className="mt-2 text-sm text-gray-700">
+            Time to target: {(elapsedTime / 1000).toFixed(3)} s
+          </div>
+        )}
       </div>
 
       <div
