@@ -1,5 +1,6 @@
 import Visualizer from "@/components/Visualizer";
 import Footer from "@/components/footer";
+import { Analytics } from "@vercel/analytics/next";
 
 export default function Home() {
   return (
