@@ -231,10 +231,10 @@ function aStar(grid: NodeType[][], start: NodeType, target: NodeType) {
   return { visitedOrder, path };
 }
 
-function animate(
+export function animate(
   visited: NodeType[],
   path: NodeType[],
-  onVisit: (n: NodeType) => void,
+  onVisit: (n: NodeType, index: number) => void,
   onPath: (n: NodeType) => void,
   speed = 10,
   timeoutsRef?: React.MutableRefObject<number[]>
@@ -245,7 +245,7 @@ function animate(
   }
 
   visited.forEach((n, i) => {
-    const t = window.setTimeout(() => onVisit(n), i * speed);
+    const t = window.setTimeout(() => onVisit(n, i), i * speed);
     timeoutsRef?.current.push(t);
   });
 
@@ -268,6 +268,53 @@ export default function Visualizer() {
   const [start, setStart] = useState(START_POS);
   const [target, setTarget] = useState(TARGET_POS);
   const timeoutsRef = useRef<number[]>([]);
+  const soundThrottle = Math.max(1, Math.floor(speed / 10));
+
+  const blockSound =
+    typeof Audio !== "undefined" ? new Audio("/blockplace.mp3") : null;
+
+  // AudioContext reference
+  // Ref for single AudioContext instance
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // Ref for sound toggle
+  const soundEnabledRef = useRef(true);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
+
+  // Lazily create or resume the AudioContext
+  function getAudioCtx() {
+    if (!audioCtxRef.current && typeof AudioContext !== "undefined") {
+      audioCtxRef.current = new AudioContext();
+    }
+    if (audioCtxRef.current?.state === "suspended") {
+      // Resume only in response to user gesture
+      audioCtxRef.current.resume().catch(() => {});
+    }
+    return audioCtxRef.current;
+  }
+
+  function playBeep(frequency = 400, duration = 50, volume = 0.08) {
+    if (!soundEnabledRef.current) return;
+
+    const audioCtx = getAudioCtx();
+    if (!audioCtx) return;
+
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+
+    oscillator.type = "square";
+    oscillator.frequency.value = frequency;
+    gainNode.gain.value = volume;
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+
+    oscillator.start();
+    oscillator.stop(audioCtx.currentTime + duration / 1000);
+  }
 
   const modeRef = useRef(placing);
   const runningRef = useRef(running);
@@ -343,18 +390,19 @@ export default function Visualizer() {
     );
   }, []);
 
-  const randomMaze = useCallback(
-    () =>
-      setGrid((g) =>
-        cloneGrid(g).map((row) =>
-          row.map((n) => ({
-            ...n,
-            isWall: !n.isStart && !n.isTarget && Math.random() < 0.25,
-          }))
-        )
-      ),
-    []
+  const randomMaze = useCallback(() => {
+  clearPaths(); 
+
+  setGrid((g) =>
+    cloneGrid(g).map((row) =>
+      row.map((n) => ({
+        ...n,
+        isWall: !n.isStart && !n.isTarget && Math.random() < 0.25,
+      }))
+    )
   );
+}, [clearPaths]);
+
 
   const runAlgorithm = useCallback(
     (type: "dijkstra" | "astar" | "bfs" | "dfs") => {
@@ -385,12 +433,16 @@ export default function Visualizer() {
         else if (type === "bfs") result = bfs(base, startNode, targetNode);
         else result = dfs(base, startNode, targetNode);
 
-        const visit = (n: NodeType) =>
+        const visit = (n: NodeType, index: number) =>
           setGrid((prev) => {
             const c = cloneGrid(prev);
             const node = c[n.row][n.col];
-            if (!node.isStart && !node.isTarget && !node.isWall)
+            if (!node.isStart && !node.isTarget && !node.isWall) {
               node.visited = true;
+              if (index % soundThrottle === 0) {
+                playBeep(400, 30);
+              }
+            }
             return c;
           });
 
@@ -398,7 +450,10 @@ export default function Visualizer() {
           setGrid((prev) => {
             const c = cloneGrid(prev);
             const node = c[n.row][n.col];
-            if (!node.isStart && !node.isTarget) node.isPath = true;
+            if (!node.isStart && !node.isTarget) {
+              node.isPath = true;
+              if (Math.random() < 0.5) playBeep(600, 30);
+            }
             return c;
           });
 
@@ -407,8 +462,8 @@ export default function Visualizer() {
         animate(
           result.visitedOrder,
           result.path,
-          visit,
-          path,
+          (n, i) => visit(n, i),
+          (n) => path(n),
           delay,
           timeoutsRef
         );
@@ -563,6 +618,15 @@ export default function Visualizer() {
             onChange={(e) => setSpeed(Number(e.target.value))}
           />
         </label>
+        <button
+          onClick={() => setSoundEnabled((prev) => !prev)}
+          className={`px-3 py-1 rounded ${
+            soundEnabled ? "bg-green-700 text-white" : "bg-gray-500 text-white"
+          }`}
+        >
+          {soundEnabled ? "Sound On" : "Sound Off"}
+        </button>
+
         {elapsedTime !== null && (
           <div className="mt-2 text-sm text-gray-700">
             Time to target: {(elapsedTime / 1000).toFixed(3)} s
